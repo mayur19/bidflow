@@ -1,0 +1,5727 @@
+# BidFlow API contract. x-status/x-ticket track implementation against docs/planning/backlog.md.
+openapi: 3.1.0
+info:
+  title: BidFlow API
+  version: 0.1.0
+  license:
+    name: MIT
+    identifier: MIT
+  description: 'Procurement and supplier bidding API for BidFlow.
+
+
+    Conventions (see docs/api/README.md and ADR-0006):
+
+    - Base path `/api/v1`; health checks at `/api/health/*`.
+
+    - Every response uses the envelope `{ success, data, error, meta? }`.
+
+    - Money is integer minor units plus an ISO currency; rates are basis points; quantities are thousandths
+    of a unit (ADR-0013).
+
+    - Session cookie authentication; unsafe methods require `X-CSRF-Token` and a matching Origin (ADR-0005).
+
+    - Every query is scoped to the session organization; foreign ids return 404 (ADR-0003).
+
+    - `x-status` marks each operation `implemented` or `pending`; pending operations enforce auth and
+    permissions, then return 501 with `details.ticket` equal to `x-ticket`.'
+servers:
+  - url: http://localhost:5172/api/v1
+    description: Local web dev server (proxies to the API)
+  - url: http://localhost:4102/api/v1
+    description: Local API direct
+tags:
+  - name: Auth
+    description: Auth endpoints
+  - name: Health
+    description: Health endpoints
+  - name: Departments
+    description: Departments endpoints
+  - name: Organization
+    description: Organization endpoints
+  - name: Users
+    description: Users endpoints
+  - name: Purchase requests
+    description: Purchase requests endpoints
+  - name: Approvals
+    description: Approvals endpoints
+  - name: Suppliers
+    description: Suppliers endpoints
+  - name: RFQs
+    description: RFQs endpoints
+  - name: Evaluation
+    description: Evaluation endpoints
+  - name: Awards
+    description: Awards endpoints
+  - name: Supplier portal
+    description: Supplier portal endpoints
+  - name: Purchase orders
+    description: Purchase orders endpoints
+  - name: Reports
+    description: Reports endpoints
+  - name: Notifications
+    description: Notifications endpoints
+  - name: Audit
+    description: Audit endpoints
+  - name: Account
+    description: Account endpoints
+security:
+  - sessionCookie: []
+paths:
+  /auth/login:
+    post:
+      operationId: login
+      tags:
+        - Auth
+      summary: Sign in with email and password
+      x-status: implemented
+      x-ticket: BF-002
+      security: []
+      description:
+        Sets the HttpOnly session cookie and returns the CSRF token for subsequent unsafe requests.
+        Wrong password, unknown email and inactive account return the same 401. Origin must match APP_ORIGIN.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/SessionResponse'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/logout:
+    post:
+      operationId: logout
+      tags:
+        - Auth
+      summary: Sign out and delete the server session
+      x-status: implemented
+      x-ticket: BF-002
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: object
+                    required:
+                      - loggedOut
+                    properties:
+                      loggedOut:
+                        const: true
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /auth/session:
+    get:
+      operationId: getSession
+      tags:
+        - Auth
+      summary: Current session user and CSRF token
+      x-status: implemented
+      x-ticket: BF-002
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/SessionResponse'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+  /health/live:
+    get:
+      operationId: getLiveness
+      tags:
+        - Health
+      summary: Liveness (no dependencies)
+      x-status: implemented
+      x-ticket: BF-003
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: object
+                    required:
+                      - status
+                      - version
+                    properties:
+                      status:
+                        type: string
+                      version:
+                        type: string
+                  error:
+                    type: 'null'
+      servers:
+        - url: http://localhost:4102/api
+          description: Health endpoints are mounted outside /api/v1
+  /health/ready:
+    get:
+      operationId: getReadiness
+      tags:
+        - Health
+      summary: Readiness (verifies PostgreSQL)
+      x-status: implemented
+      x-ticket: BF-003
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: object
+                    required:
+                      - status
+                      - version
+                    properties:
+                      status:
+                        type: string
+                      version:
+                        type: string
+                  error:
+                    type: 'null'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+      servers:
+        - url: http://localhost:4102/api
+          description: Health endpoints are mounted outside /api/v1
+  /me:
+    get:
+      operationId: getMe
+      tags:
+        - Auth
+      summary: Current user
+      x-status: implemented
+      x-ticket: BF-002
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/SessionUser'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+  /account/password:
+    post:
+      operationId: changePassword
+      tags:
+        - Account
+      summary: Change own password (revokes other sessions)
+      description:
+        'Any signed-in user. Pending: returns 401/403 per the permission matrix, otherwise
+        501 NOT_IMPLEMENTED with `details.ticket = BF-052`.'
+      x-status: pending
+      x-ticket: BF-052
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: object
+                    properties:
+                      changed:
+                        type: boolean
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /account/profile:
+    patch:
+      operationId: updateProfile
+      tags:
+        - Account
+      summary: Update own display name
+      description:
+        'Any signed-in user. Pending: returns 401/403 per the permission matrix, otherwise
+        501 NOT_IMPLEMENTED with `details.ticket = BF-052`.'
+      x-status: pending
+      x-ticket: BF-052
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/SessionUser'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /approvals:
+    get:
+      operationId: listApprovals
+      tags:
+        - Approvals
+      summary: List approval steps awaiting the caller
+      description:
+        'Required permission: `approvals:decide`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-020`.'
+      x-status: pending
+      x-ticket: BF-020
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                  - meta
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ApprovalStep'
+                  error:
+                    type: 'null'
+                  meta:
+                    $ref: '#/components/schemas/PageMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /approvals/{id}/decision:
+    post:
+      operationId: decideApproval
+      tags:
+        - Approvals
+      summary: Approve, reject or request clarification
+      description:
+        'Required permission: `approvals:decide`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-020`.'
+      x-status: pending
+      x-ticket: BF-020
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalDecisionInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/ApprovalStep'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /audit-logs:
+    get:
+      operationId: listAuditLogs
+      tags:
+        - Audit
+      summary: List audit events of the organization
+      description:
+        'Required permission: `audit:read`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-051`.'
+      x-status: pending
+      x-ticket: BF-051
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                  - meta
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditEvent'
+                  error:
+                    type: 'null'
+                  meta:
+                    $ref: '#/components/schemas/PageMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /awards:
+    get:
+      operationId: listAwards
+      tags:
+        - Awards
+      summary: List award recommendations
+      description:
+        'Required permission: `evaluations:read`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-040`.'
+      x-status: pending
+      x-ticket: BF-040
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                  - meta
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AwardRecommendation'
+                  error:
+                    type: 'null'
+                  meta:
+                    $ref: '#/components/schemas/PageMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /awards/{id}:
+    get:
+      operationId: getAward
+      tags:
+        - Awards
+      summary: Get an award recommendation with its snapshot
+      description:
+        'Required permission: `evaluations:read`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-040`.'
+      x-status: pending
+      x-ticket: BF-040
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/AwardRecommendation'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /departments:
+    get:
+      operationId: listDepartments
+      tags:
+        - Departments
+      summary: List departments with planning budgets
+      description:
+        'Required permission: `departments:read`. Implemented. Scoped to the session organization;
+        ids from other organizations return 404.'
+      x-status: implemented
+      x-ticket: BF-009
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                  - meta
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Department'
+                  error:
+                    type: 'null'
+                  meta:
+                    $ref: '#/components/schemas/PageMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      operationId: createDepartment
+      tags:
+        - Departments
+      summary: Create a department with a budget
+      description:
+        'Required permission: `departments:manage`. Implemented. Scoped to the session organization;
+        ids from other organizations return 404.'
+      x-status: implemented
+      x-ticket: BF-009
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDepartmentInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Department'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /departments/{id}:
+    patch:
+      operationId: updateDepartment
+      tags:
+        - Departments
+      summary: Update or deactivate a department (optimistic locking)
+      description:
+        'Required permission: `departments:manage`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-013`.'
+      x-status: pending
+      x-ticket: BF-013
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDepartmentInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Department'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+    get:
+      operationId: getDepartment
+      tags:
+        - Departments
+      summary: Get a department by id
+      description:
+        'Required permission: `departments:read`. Implemented. Scoped to the session organization;
+        ids from other organizations return 404.'
+      x-status: implemented
+      x-ticket: BF-009
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Department'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /departments/{id}/budgets:
+    get:
+      operationId: listDepartmentBudgets
+      tags:
+        - Departments
+      summary: List budget periods with requested/approved/committed rollups
+      description:
+        'Required permission: `departments:read`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-014`.'
+      x-status: pending
+      x-ticket: BF-014
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BudgetPeriodSummary'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /departments/{id}/budgets/{period}:
+    put:
+      operationId: setDepartmentBudget
+      tags:
+        - Departments
+      summary: Set the budget for a period
+      description:
+        'Required permission: `departments:manage`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-014`.'
+      x-status: pending
+      x-ticket: BF-014
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: period
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9]{4}-(M(0[1-9]|1[0-2])|Q[1-4])$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetBudgetInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/BudgetPeriodSummary'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /departments/{id}/cost-centers:
+    get:
+      operationId: listCostCenters
+      tags:
+        - Departments
+      summary: List cost centers of a department
+      description:
+        'Required permission: `departments:read`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-013`.'
+      x-status: pending
+      x-ticket: BF-013
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CostCenter'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+    post:
+      operationId: createCostCenter
+      tags:
+        - Departments
+      summary: Create a cost center
+      description:
+        'Required permission: `departments:manage`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-013`.'
+      x-status: pending
+      x-ticket: BF-013
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCostCenterInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/CostCenter'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /notifications:
+    get:
+      operationId: listNotifications
+      tags:
+        - Notifications
+      summary: List the caller's in-app notifications
+      description:
+        'Required permission: `notifications:read`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-050`.'
+      x-status: pending
+      x-ticket: BF-050
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                  - meta
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notification'
+                  error:
+                    type: 'null'
+                  meta:
+                    $ref: '#/components/schemas/PageMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /notifications/{id}/read:
+    post:
+      operationId: markNotificationRead
+      tags:
+        - Notifications
+      summary: Mark a notification as read
+      description:
+        'Required permission: `notifications:read`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-050`.'
+      x-status: pending
+      x-ticket: BF-050
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Notification'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /organization:
+    get:
+      operationId: getOrganization
+      tags:
+        - Organization
+      summary: Get organization settings
+      description:
+        'Required permission: `departments:read`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-012`.'
+      x-status: pending
+      x-ticket: BF-012
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Organization'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+    patch:
+      operationId: updateOrganization
+      tags:
+        - Organization
+      summary: Update currency, timezone and approval threshold
+      description:
+        'Required permission: `organization:manage`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-012`.'
+      x-status: pending
+      x-ticket: BF-012
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrganizationInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Organization'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /purchase-orders:
+    get:
+      operationId: listPurchaseOrders
+      tags:
+        - Purchase orders
+      summary: List purchase orders
+      description:
+        'Required permission: `purchase-orders:read`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-044`.'
+      x-status: pending
+      x-ticket: BF-044
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                  - meta
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PurchaseOrder'
+                  error:
+                    type: 'null'
+                  meta:
+                    $ref: '#/components/schemas/PageMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /purchase-orders/{id}:
+    get:
+      operationId: getPurchaseOrder
+      tags:
+        - Purchase orders
+      summary: Get a purchase order
+      description:
+        'Required permission: `purchase-orders:read`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-044`.'
+      x-status: pending
+      x-ticket: BF-044
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/PurchaseOrder'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /purchase-orders/{id}/cancel:
+    post:
+      operationId: cancelPurchaseOrder
+      tags:
+        - Purchase orders
+      summary: Cancel a PO with an audit reason
+      description:
+        'Required permission: `purchase-orders:issue`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-043`.'
+      x-status: pending
+      x-ticket: BF-043
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReasonInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/PurchaseOrder'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /purchase-orders/{id}/issue:
+    post:
+      operationId: issuePurchaseOrder
+      tags:
+        - Purchase orders
+      summary: Issue a PO draft (budget commitment check)
+      description:
+        'Required permission: `purchase-orders:issue`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-043`.'
+      x-status: pending
+      x-ticket: BF-043
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VersionInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/PurchaseOrder'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /purchase-orders/{id}/receipts:
+    get:
+      operationId: listReceipts
+      tags:
+        - Purchase orders
+      summary: List receipts of a PO
+      description:
+        'Required permission: `purchase-orders:read`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-045`.'
+      x-status: pending
+      x-ticket: BF-045
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Receipt'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+    post:
+      operationId: recordReceipt
+      tags:
+        - Purchase orders
+      summary: Record a (partial) receipt; over-receipt is rejected
+      description:
+        'Required permission: `receipts:record`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-045`.'
+      x-status: pending
+      x-ticket: BF-045
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordReceiptInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Receipt'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /purchase-requests:
+    get:
+      operationId: listPurchaseRequests
+      tags:
+        - Purchase requests
+      summary: List purchase requests with filters
+      description:
+        'Required permission: `purchase-requests:read`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-017`.'
+      x-status: pending
+      x-ticket: BF-017
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                  - meta
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PurchaseRequest'
+                  error:
+                    type: 'null'
+                  meta:
+                    $ref: '#/components/schemas/PageMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+    post:
+      operationId: createPurchaseRequest
+      tags:
+        - Purchase requests
+      summary: Create a draft purchase request
+      description:
+        'Required permission: `purchase-requests:write`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-017`.'
+      x-status: pending
+      x-ticket: BF-017
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePurchaseRequestInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/PurchaseRequest'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /purchase-requests/{id}:
+    get:
+      operationId: getPurchaseRequest
+      tags:
+        - Purchase requests
+      summary: Get a purchase request with lines and history
+      description:
+        'Required permission: `purchase-requests:read`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-017`.'
+      x-status: pending
+      x-ticket: BF-017
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/PurchaseRequest'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+    patch:
+      operationId: updatePurchaseRequest
+      tags:
+        - Purchase requests
+      summary: Edit a draft purchase request
+      description:
+        'Required permission: `purchase-requests:write`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-018`.'
+      x-status: pending
+      x-ticket: BF-018
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePurchaseRequestInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/PurchaseRequest'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /purchase-requests/{id}/attachments:
+    get:
+      operationId: listPurchaseRequestAttachments
+      tags:
+        - Purchase requests
+      summary: List attachments of a request
+      description:
+        'Required permission: `purchase-requests:read`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-022`.'
+      x-status: pending
+      x-ticket: BF-022
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Attachment'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+    post:
+      operationId: uploadPurchaseRequestAttachment
+      tags:
+        - Purchase requests
+      summary: Upload a specification attachment
+      description:
+        'Required permission: `purchase-requests:write`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-022`.'
+      x-status: pending
+      x-ticket: BF-022
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Attachment'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /purchase-requests/{id}/cancel:
+    post:
+      operationId: cancelPurchaseRequest
+      tags:
+        - Purchase requests
+      summary: Cancel a request with a reason
+      description:
+        'Required permission: `purchase-requests:write`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-018`.'
+      x-status: pending
+      x-ticket: BF-018
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReasonInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/PurchaseRequest'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /purchase-requests/{id}/revise:
+    post:
+      operationId: revisePurchaseRequest
+      tags:
+        - Purchase requests
+      summary: Create a revised draft from a submitted request
+      description:
+        'Required permission: `purchase-requests:write`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-018`.'
+      x-status: pending
+      x-ticket: BF-018
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VersionInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/PurchaseRequest'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /purchase-requests/{id}/submit:
+    post:
+      operationId: submitPurchaseRequest
+      tags:
+        - Purchase requests
+      summary: Submit a draft (freezes an immutable revision)
+      description:
+        'Required permission: `purchase-requests:write`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-018`.'
+      x-status: pending
+      x-ticket: BF-018
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VersionInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/PurchaseRequest'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /reports/dashboard:
+    get:
+      operationId: getDashboard
+      tags:
+        - Reports
+      summary: Buyer dashboard metrics
+      description:
+        'Required permission: `reports:read`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-048`.'
+      x-status: pending
+      x-ticket: BF-048
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/DashboardMetrics'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /reports/rfq-cycle-time:
+    get:
+      operationId: getRfqCycleTime
+      tags:
+        - Reports
+      summary: RFQ cycle time
+      description:
+        'Required permission: `reports:read`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-049`.'
+      x-status: pending
+      x-ticket: BF-049
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/ReportTable'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /reports/spend:
+    get:
+      operationId: getSpendReport
+      tags:
+        - Reports
+      summary: Spend by department, category or supplier
+      description:
+        'Required permission: `reports:read`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-049`.'
+      x-status: pending
+      x-ticket: BF-049
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/ReportTable'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /reports/supplier-performance:
+    get:
+      operationId: getSupplierPerformance
+      tags:
+        - Reports
+      summary: Bids per RFQ and delivery punctuality by supplier
+      description:
+        'Required permission: `reports:read`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-049`.'
+      x-status: pending
+      x-ticket: BF-049
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/ReportTable'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /reports/{report}/export.csv:
+    get:
+      operationId: exportReportCsv
+      tags:
+        - Reports
+      summary: Export an authorized, filtered report as CSV
+      description:
+        'Required permission: `reports:read`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-049`.'
+      x-status: pending
+      x-ticket: BF-049
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: report
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - spend
+              - supplier-performance
+              - rfq-cycle-time
+              - purchase-requests
+              - comparisons
+              - purchase-orders
+      responses:
+        '200':
+          description: CSV file
+          content:
+            text/csv:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /rfqs:
+    get:
+      operationId: listRfqs
+      tags:
+        - RFQs
+      summary: List RFQs by stage with search
+      description:
+        'Required permission: `rfqs:read`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-027`.'
+      x-status: pending
+      x-ticket: BF-027
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                  - meta
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Rfq'
+                  error:
+                    type: 'null'
+                  meta:
+                    $ref: '#/components/schemas/PageMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+    post:
+      operationId: createRfq
+      tags:
+        - RFQs
+      summary: Create an RFQ from an approved purchase request
+      description:
+        'Required permission: `rfqs:manage`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-027`.'
+      x-status: pending
+      x-ticket: BF-027
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRfqInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Rfq'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /rfqs/{id}:
+    get:
+      operationId: getRfq
+      tags:
+        - RFQs
+      summary: Get an RFQ
+      description:
+        'Required permission: `rfqs:read`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-027`.'
+      x-status: pending
+      x-ticket: BF-027
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Rfq'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+    patch:
+      operationId: updateRfq
+      tags:
+        - RFQs
+      summary: Clarify a draft RFQ (lines, terms, deadline)
+      description:
+        'Required permission: `rfqs:manage`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-027`.'
+      x-status: pending
+      x-ticket: BF-027
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRfqInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Rfq'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /rfqs/{id}/advance-deadline:
+    post:
+      operationId: advanceRfqDeadline
+      tags:
+        - RFQs
+      summary: 'Development/test only: move the deadline into the past'
+      description:
+        'Required permission: `demo:advance-clock`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-031`.'
+      x-status: pending
+      x-ticket: BF-031
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdvanceDeadlineInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Rfq'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /rfqs/{id}/amendments:
+    post:
+      operationId: amendRfq
+      tags:
+        - RFQs
+      summary: Create a new RFQ revision and notify invitees in-app
+      description:
+        'Required permission: `rfqs:manage`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-029`.'
+      x-status: pending
+      x-ticket: BF-029
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AmendRfqInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Rfq'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /rfqs/{id}/bids/{bidId}/qualification:
+    post:
+      operationId: setBidQualification
+      tags:
+        - Evaluation
+      summary: Disqualify a bid or clear a disqualification, with a reason
+      description:
+        'Required permission: `evaluations:score`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-038`.'
+      x-status: pending
+      x-ticket: BF-038
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: bidId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QualificationInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/BidQualification'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /rfqs/{id}/close:
+    post:
+      operationId: closeRfq
+      tags:
+        - RFQs
+      summary: Close an RFQ early with a reason
+      description:
+        'Required permission: `rfqs:manage`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-031`.'
+      x-status: pending
+      x-ticket: BF-031
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReasonInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Rfq'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /rfqs/{id}/comparison:
+    get:
+      operationId: getRfqComparison
+      tags:
+        - Evaluation
+      summary: Bid comparison matrix after close
+      description:
+        'Required permission: `evaluations:read`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-037`.'
+      x-status: pending
+      x-ticket: BF-037
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/BidComparison'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /rfqs/{id}/criteria:
+    put:
+      operationId: setRfqCriteria
+      tags:
+        - RFQs
+      summary: Replace evaluation criteria (weights must total 10000 bps)
+      description:
+        'Required permission: `rfqs:manage`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-028`.'
+      x-status: pending
+      x-ticket: BF-028
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetCriteriaInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EvaluationCriterion'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /rfqs/{id}/evaluations:
+    get:
+      operationId: listRfqEvaluations
+      tags:
+        - Evaluation
+      summary: List evaluator scores
+      description:
+        'Required permission: `evaluations:read`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-038`.'
+      x-status: pending
+      x-ticket: BF-038
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EvaluationScore'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+    post:
+      operationId: scoreRfqBids
+      tags:
+        - Evaluation
+      summary: Record qualitative scores (0-100) with rationale
+      description:
+        'Required permission: `evaluations:score`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-038`.'
+      x-status: pending
+      x-ticket: BF-038
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScoreBidsInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EvaluationScore'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /rfqs/{id}/invitations:
+    get:
+      operationId: listRfqInvitations
+      tags:
+        - RFQs
+      summary: List invitations and their states
+      description:
+        'Required permission: `rfqs:read`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-030`.'
+      x-status: pending
+      x-ticket: BF-030
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RfqInvitation'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+    post:
+      operationId: inviteSuppliers
+      tags:
+        - RFQs
+      summary: Invite suppliers to an RFQ
+      description:
+        'Required permission: `rfqs:manage`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-030`.'
+      x-status: pending
+      x-ticket: BF-030
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteSuppliersInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RfqInvitation'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /rfqs/{id}/publish:
+    post:
+      operationId: publishRfq
+      tags:
+        - RFQs
+      summary: Publish an RFQ and freeze its requirements
+      description:
+        'Required permission: `rfqs:manage`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-029`.'
+      x-status: pending
+      x-ticket: BF-029
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VersionInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Rfq'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /rfqs/{id}/recommend-award:
+    post:
+      operationId: recommendAward
+      tags:
+        - Evaluation
+      summary: Recommend one bid for all lines
+      description:
+        'Required permission: `awards:recommend`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-040`.'
+      x-status: pending
+      x-ticket: BF-040
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecommendAwardInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/AwardRecommendation'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /supplier/bids/{id}/submit:
+    post:
+      operationId: submitBid
+      tags:
+        - Supplier portal
+      summary: Submit the current bid revision before the deadline
+      description:
+        'Required permission: `supplier-portal:access`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-035`.'
+      x-status: pending
+      x-ticket: BF-035
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VersionInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/SupplierBid'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /supplier/bids/{id}/withdraw:
+    post:
+      operationId: withdrawBid
+      tags:
+        - Supplier portal
+      summary: Withdraw a bid before close
+      description:
+        'Required permission: `supplier-portal:access`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-035`.'
+      x-status: pending
+      x-ticket: BF-035
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReasonInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/SupplierBid'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /supplier/rfqs:
+    get:
+      operationId: listSupplierRfqs
+      tags:
+        - Supplier portal
+      summary: List RFQs the caller supplier is invited to
+      description:
+        'Required permission: `supplier-portal:access`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-033`.'
+      x-status: pending
+      x-ticket: BF-033
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                  - meta
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SupplierRfq'
+                  error:
+                    type: 'null'
+                  meta:
+                    $ref: '#/components/schemas/PageMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /supplier/rfqs/{id}:
+    get:
+      operationId: getSupplierRfq
+      tags:
+        - Supplier portal
+      summary: Get an invited RFQ (404 when not invited)
+      description:
+        'Required permission: `supplier-portal:access`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-033`.'
+      x-status: pending
+      x-ticket: BF-033
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/SupplierRfq'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /supplier/rfqs/{id}/bid:
+    get:
+      operationId: getOwnBid
+      tags:
+        - Supplier portal
+      summary: Get the caller supplier's current bid
+      description:
+        'Required permission: `supplier-portal:access`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-034`.'
+      x-status: pending
+      x-ticket: BF-034
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/SupplierBid'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+    put:
+      operationId: saveBidDraft
+      tags:
+        - Supplier portal
+      summary: Save a bid draft (creates a new revision)
+      description:
+        'Required permission: `supplier-portal:access`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-034`.'
+      x-status: pending
+      x-ticket: BF-034
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveBidInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/SupplierBid'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /supplier/rfqs/{id}/outcome:
+    get:
+      operationId: getOwnAwardOutcome
+      tags:
+        - Supplier portal
+      summary: Read own award outcome (no competitor data)
+      description:
+        'Required permission: `supplier-portal:access`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-035`.'
+      x-status: pending
+      x-ticket: BF-035
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/SupplierOutcome'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /suppliers:
+    get:
+      operationId: listSuppliers
+      tags:
+        - Suppliers
+      summary: List supplier organizations
+      description:
+        'Required permission: `suppliers:read`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-024`.'
+      x-status: pending
+      x-ticket: BF-024
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                  - meta
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Supplier'
+                  error:
+                    type: 'null'
+                  meta:
+                    $ref: '#/components/schemas/PageMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+    post:
+      operationId: createSupplier
+      tags:
+        - Suppliers
+      summary: Create a supplier profile
+      description:
+        'Required permission: `suppliers:manage`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-024`.'
+      x-status: pending
+      x-ticket: BF-024
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSupplierInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Supplier'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /suppliers/{id}:
+    get:
+      operationId: getSupplier
+      tags:
+        - Suppliers
+      summary: Get a supplier profile
+      description:
+        'Required permission: `suppliers:read`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-024`.'
+      x-status: pending
+      x-ticket: BF-024
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Supplier'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+    patch:
+      operationId: updateSupplier
+      tags:
+        - Suppliers
+      summary: Update a supplier profile
+      description:
+        'Required permission: `suppliers:manage`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-024`.'
+      x-status: pending
+      x-ticket: BF-024
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSupplierInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Supplier'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /suppliers/{id}/status:
+    post:
+      operationId: setSupplierStatus
+      tags:
+        - Suppliers
+      summary: Activate or deactivate a supplier
+      description:
+        'Required permission: `suppliers:manage`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-024`.'
+      x-status: pending
+      x-ticket: BF-024
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupplierStatusInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Supplier'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /suppliers/{id}/users:
+    get:
+      operationId: listSupplierUsers
+      tags:
+        - Suppliers
+      summary: List supplier logins
+      description:
+        'Required permission: `suppliers:manage`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-025`.'
+      x-status: pending
+      x-ticket: BF-025
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SupplierUser'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+    post:
+      operationId: provisionSupplierUser
+      tags:
+        - Suppliers
+      summary: Provision a supplier login (portal invitation, no email)
+      description:
+        'Required permission: `suppliers:manage`. Pending: returns 401/403 per the permission
+        matrix, otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-025`.'
+      x-status: pending
+      x-ticket: BF-025
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProvisionSupplierUserInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/SupplierUser'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /users:
+    get:
+      operationId: listUsers
+      tags:
+        - Users
+      summary: List users of the organization
+      description:
+        'Required permission: `users:manage`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-015`.'
+      x-status: pending
+      x-ticket: BF-015
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                  - meta
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  error:
+                    type: 'null'
+                  meta:
+                    $ref: '#/components/schemas/PageMeta'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+    post:
+      operationId: createUser
+      tags:
+        - Users
+      summary: Create a user
+      description:
+        'Required permission: `users:manage`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-015`.'
+      x-status: pending
+      x-ticket: BF-015
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/User'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /users/{id}:
+    patch:
+      operationId: updateUser
+      tags:
+        - Users
+      summary: Change role or deactivate a user
+      description:
+        'Required permission: `users:manage`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-015`.'
+      x-status: pending
+      x-ticket: BF-015
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/User'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+  /users/{id}/departments:
+    put:
+      operationId: setUserDepartments
+      tags:
+        - Users
+      summary: Replace department memberships
+      description:
+        'Required permission: `users:manage`. Pending: returns 401/403 per the permission matrix,
+        otherwise 501 NOT_IMPLEMENTED with `details.ticket = BF-015`.'
+      x-status: pending
+      x-ticket: BF-015
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetUserDepartmentsInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                  - error
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/User'
+                  error:
+                    type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: sid
+      description: HttpOnly, SameSite=Lax opaque session cookie set by POST /auth/login (ADR-0005).
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description:
+        HMAC of the session token, returned by login and GET /auth/session. Required on POST/PUT/PATCH/DELETE
+        when authenticated; Origin must also match APP_ORIGIN.
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 25
+    Search:
+      name: q
+      in: query
+      description: Case-insensitive literal search (wildcards are escaped).
+      schema:
+        type: string
+        maxLength: 120
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description:
+        Planned (BF-047). A replayed key returns the original response; reuse with a different
+        body returns 409.
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+  responses:
+    Unauthenticated:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            success: false
+            data: null
+            error:
+              code: UNAUTHENTICATED
+              message: Authentication required
+    Forbidden:
+      description: You do not have permission to perform this action
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            success: false
+            data: null
+            error:
+              code: FORBIDDEN
+              message: You do not have permission to perform this action
+    NotFound:
+      description: Resource not found (also returned for records of other organizations)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            success: false
+            data: null
+            error:
+              code: NOT_FOUND
+              message: Resource not found (also returned for records of other organizations)
+    Conflict:
+      description: 'Conflict: duplicate, stale version or invalid state transition'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            success: false
+            data: null
+            error:
+              code: CONFLICT
+              message: 'Conflict: duplicate, stale version or invalid state transition'
+    ValidationFailed:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            success: false
+            data: null
+            error:
+              code: VALIDATION_FAILED
+              message: Request validation failed
+              details:
+                - path: budgetMinor
+                  message: Budget must be a whole number of minor units
+    RateLimited:
+      description: Too many requests, slow down
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            success: false
+            data: null
+            error:
+              code: RATE_LIMITED
+              message: Too many requests, slow down
+    NotImplemented:
+      description: Not implemented yet (tracked as BF-027)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            success: false
+            data: null
+            error:
+              code: NOT_IMPLEMENTED
+              message: Not implemented yet (tracked as BF-027)
+              details:
+                ticket: BF-027
+    ServiceUnavailable:
+      description: Database unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            success: false
+            data: null
+            error:
+              code: SERVICE_UNAVAILABLE
+              message: Database unavailable
+  schemas:
+    ErrorCode:
+      type: string
+      enum:
+        - VALIDATION_FAILED
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - CONFLICT
+        - INVALID_STATE_TRANSITION
+        - RATE_LIMITED
+        - CSRF_FAILED
+        - NOT_IMPLEMENTED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL_ERROR
+    ApiError:
+      type: object
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        message:
+          type: string
+        details:
+          description:
+            Field issues, `{ ticket }` for 501, or `{ domainCode, issues }` for domain rule
+            failures.
+        requestId:
+          type: string
+      required:
+        - code
+        - message
+    ErrorEnvelope:
+      type: object
+      properties:
+        success:
+          const: false
+        data:
+          type: 'null'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required:
+        - success
+        - data
+        - error
+    PageMeta:
+      type: object
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+      required:
+        - total
+        - page
+        - limit
+    Money:
+      type: object
+      properties:
+        amountMinor:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+          description: Integer minor units (cents for USD). Never a float.
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+          examples:
+            - USD
+      required:
+        - amountMinor
+        - currency
+    Role:
+      type: string
+      enum:
+        - BUYER_ADMIN
+        - REQUESTER
+        - PROCUREMENT_OFFICER
+        - APPROVER
+        - RECEIVING_CLERK
+        - SUPPLIER_USER
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          minLength: 1
+          maxLength: 256
+      required:
+        - email
+        - password
+    SessionUser:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        organizationName:
+          type: string
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+      required:
+        - id
+        - organizationId
+        - organizationName
+        - email
+        - displayName
+        - role
+    SessionResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/SessionUser'
+        csrfToken:
+          type: string
+          minLength: 32
+      required:
+        - user
+        - csrfToken
+    BudgetPeriod:
+      type: string
+      enum:
+        - MONTHLY
+        - QUARTERLY
+    Department:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        budgetPeriod:
+          $ref: '#/components/schemas/BudgetPeriod'
+        budget:
+          $ref: '#/components/schemas/Money'
+        isActive:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - code
+        - name
+        - budgetPeriod
+        - budget
+        - isActive
+        - version
+        - createdAt
+        - updatedAt
+    CreateDepartmentInput:
+      type: object
+      properties:
+        code:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9-]{1,15}$
+          description: Trimmed and upper-cased server-side; stored form matches ^[A-Z0-9][A-Z0-9-]{1,15}$.
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        budgetPeriod:
+          $ref: '#/components/schemas/BudgetPeriod'
+        budgetMinor:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description:
+            Budget in integer minor units of the organization currency. Currency is never accepted
+            from the client.
+      required:
+        - code
+        - name
+        - budgetPeriod
+        - budgetMinor
+      additionalProperties: false
+      examples:
+        - code: FNB
+          name: Food & Beverage
+          budgetPeriod: MONTHLY
+          budgetMinor: 1575050
+    UpdateDepartmentInput:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        isActive:
+          type: boolean
+        version:
+          type: integer
+      required:
+        - version
+      additionalProperties: false
+    CostCenter:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        departmentId:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        isActive:
+          type: boolean
+    CreateCostCenterInput:
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+      required:
+        - code
+        - name
+    BudgetPeriodSummary:
+      type: object
+      properties:
+        period:
+          type: string
+          examples:
+            - 2026-Q4
+        budget:
+          $ref: '#/components/schemas/Money'
+        requested:
+          $ref: '#/components/schemas/Money'
+        approved:
+          $ref: '#/components/schemas/Money'
+        committed:
+          $ref: '#/components/schemas/Money'
+        remaining:
+          $ref: '#/components/schemas/Money'
+    SetBudgetInput:
+      type: object
+      properties:
+        amountMinor:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        version:
+          type: integer
+      required:
+        - amountMinor
+    Organization:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        defaultCurrency:
+          type: string
+          pattern: ^[A-Z]{3}$
+          examples:
+            - USD
+        timezone:
+          type: string
+          examples:
+            - America/New_York
+        approvalThreshold:
+          $ref: '#/components/schemas/Money'
+    UpdateOrganizationInput:
+      type: object
+      properties:
+        name:
+          type: string
+        timezone:
+          type: string
+        approvalThresholdMinor:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        version:
+          type: integer
+      required:
+        - version
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+        isActive:
+          type: boolean
+        departmentIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+    CreateUserInput:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+        temporaryPassword:
+          type: string
+          minLength: 12
+      required:
+        - email
+        - displayName
+        - role
+        - temporaryPassword
+    UpdateUserInput:
+      type: object
+      properties:
+        role:
+          $ref: '#/components/schemas/Role'
+        isActive:
+          type: boolean
+        displayName:
+          type: string
+    SetUserDepartmentsInput:
+      type: object
+      properties:
+        departmentIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+        - departmentIds
+    VersionInput:
+      type: object
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          description: Expected current version; stale values return 409.
+      required:
+        - version
+    ReasonInput:
+      type: object
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        version:
+          type: integer
+      required:
+        - reason
+    PurchaseRequestLine:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        description:
+          type: string
+          minLength: 1
+        category:
+          type: string
+        unit:
+          type: string
+        quantityMilli:
+          type: integer
+          minimum: 1
+          description: Quantity in thousandths of a unit (20 units = 20000).
+        estimatedUnitMinor:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+    PurchaseRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          examples:
+            - PR-2026-0042
+        status:
+          type: string
+          enum:
+            - DRAFT
+            - SUBMITTED
+            - APPROVED
+            - REJECTED
+            - SOURCING
+            - AWARDED
+            - ORDERED
+            - RECEIVED
+            - CANCELLED
+        departmentId:
+          type: string
+          format: uuid
+        requesterId:
+          type: string
+          format: uuid
+        purpose:
+          type: string
+        neededBy:
+          type: string
+          format: date
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+          examples:
+            - USD
+        estimatedTotal:
+          $ref: '#/components/schemas/Money'
+        supplierPreferenceId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/PurchaseRequestLine'
+        version:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+    CreatePurchaseRequestInput:
+      type: object
+      properties:
+        departmentId:
+          type: string
+          format: uuid
+        purpose:
+          type: string
+          minLength: 1
+        neededBy:
+          type: string
+          format: date
+        supplierPreferenceId:
+          type: string
+          format: uuid
+        lines:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            properties:
+              description:
+                type: string
+                minLength: 1
+              category:
+                type: string
+              unit:
+                type: string
+              quantityMilli:
+                type: integer
+                minimum: 1
+                description: Quantity in thousandths of a unit (20 units = 20000).
+              estimatedUnitMinor:
+                type: integer
+                minimum: 0
+                maximum: 9007199254740991
+            required:
+              - description
+              - unit
+              - quantityMilli
+              - estimatedUnitMinor
+      required:
+        - departmentId
+        - purpose
+        - neededBy
+        - lines
+    UpdatePurchaseRequestInput:
+      allOf:
+        - $ref: '#/components/schemas/CreatePurchaseRequestInput'
+        - type: object
+          properties:
+            version:
+              type: integer
+          required:
+            - version
+    Attachment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+        uploadedBy:
+          type: string
+          format: uuid
+        uploadedAt:
+          type: string
+          format: date-time
+    ApprovalStep:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        subjectType:
+          type: string
+          enum:
+            - PURCHASE_REQUEST
+            - AWARD
+            - BUDGET_EXCEPTION
+        subjectId:
+          type: string
+          format: uuid
+        stepOrder:
+          type: integer
+        requiredRole:
+          $ref: '#/components/schemas/Role'
+        status:
+          type: string
+          enum:
+            - PENDING
+            - APPROVED
+            - REJECTED
+            - CLARIFICATION_REQUESTED
+            - SKIPPED
+        decidedBy:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        decidedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        reason:
+          type:
+            - string
+            - 'null'
+    ApprovalDecisionInput:
+      type: object
+      properties:
+        decision:
+          type: string
+          enum:
+            - APPROVE
+            - REJECT
+            - REQUEST_CLARIFICATION
+        reason:
+          type: string
+      required:
+        - decision
+    Supplier:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        contactName:
+          type: string
+        email:
+          type: string
+          format: email
+        categories:
+          type: array
+          items:
+            type: string
+        taxRegistrationText:
+          type: string
+          description: Free text; not verified.
+        country:
+          type: string
+          pattern: ^[A-Z]{2}$
+        status:
+          type: string
+          enum:
+            - ACTIVE
+            - INACTIVE
+        performanceNotes:
+          type: string
+    CreateSupplierInput:
+      type: object
+      properties:
+        name:
+          type: string
+        contactName:
+          type: string
+        email:
+          type: string
+          format: email
+        categories:
+          type: array
+          items:
+            type: string
+        taxRegistrationText:
+          type: string
+          description: Free text; not verified.
+        country:
+          type: string
+          pattern: ^[A-Z]{2}$
+        performanceNotes:
+          type: string
+      required:
+        - name
+        - email
+    UpdateSupplierInput:
+      type: object
+      properties:
+        name:
+          type: string
+        contactName:
+          type: string
+        email:
+          type: string
+          format: email
+        categories:
+          type: array
+          items:
+            type: string
+        taxRegistrationText:
+          type: string
+          description: Free text; not verified.
+        country:
+          type: string
+          pattern: ^[A-Z]{2}$
+        performanceNotes:
+          type: string
+    SupplierStatusInput:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - ACTIVE
+            - INACTIVE
+        reason:
+          type: string
+      required:
+        - status
+        - reason
+    SupplierUser:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        supplierId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        isActive:
+          type: boolean
+        invitedAt:
+          type: string
+          format: date-time
+    ProvisionSupplierUserInput:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        temporaryPassword:
+          type: string
+          minLength: 12
+      required:
+        - email
+        - displayName
+        - temporaryPassword
+    RfqLine:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        description:
+          type: string
+        unit:
+          type: string
+        quantityMilli:
+          type: integer
+          minimum: 1
+          description: Quantity in thousandths of a unit (20 units = 20000).
+        spec:
+          type: object
+        sortOrder:
+          type: integer
+    EvaluationCriterion:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+        kind:
+          type: string
+          enum:
+            - PRICE
+            - QUALITATIVE
+        weightBps:
+          type: integer
+          minimum: 1
+          maximum: 10000
+      required:
+        - id
+        - label
+        - kind
+        - weightBps
+    Rfq:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          examples:
+            - RFQ-2026-0007
+        requestId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - DRAFT
+            - PUBLISHED
+            - CLOSED
+            - EVALUATING
+            - AWARD_PENDING
+            - AWARDED
+            - CANCELLED
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+          examples:
+            - USD
+        deadlineAt:
+          type: string
+          format: date-time
+        revision:
+          type: integer
+        publishedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        closedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        terms:
+          type: string
+        deliveryWindow:
+          type: object
+          properties:
+            from:
+              type: string
+              format: date
+            to:
+              type: string
+              format: date
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/RfqLine'
+        criteria:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvaluationCriterion'
+        version:
+          type: integer
+    CreateRfqInput:
+      type: object
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        deadlineAt:
+          type: string
+          format: date-time
+        terms:
+          type: string
+      required:
+        - requestId
+        - deadlineAt
+    UpdateRfqInput:
+      type: object
+      properties:
+        deadlineAt:
+          type: string
+          format: date-time
+        terms:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/RfqLine'
+        version:
+          type: integer
+      required:
+        - version
+    SetCriteriaInput:
+      type: object
+      properties:
+        criteria:
+          type: array
+          minItems: 2
+          items:
+            type: object
+            properties:
+              label:
+                type: string
+              kind:
+                type: string
+                enum:
+                  - PRICE
+                  - QUALITATIVE
+              weightBps:
+                type: integer
+                minimum: 1
+                maximum: 10000
+            required:
+              - label
+              - kind
+              - weightBps
+        version:
+          type: integer
+      required:
+        - criteria
+        - version
+      description:
+        Exactly one PRICE criterion and at least one QUALITATIVE; weights must total 10000
+        bps (B-09).
+    AmendRfqInput:
+      type: object
+      properties:
+        reason:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/RfqLine'
+        deadlineAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+      required:
+        - reason
+        - version
+    RfqInvitation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        supplierId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - INVITED
+            - VIEWED
+            - RESPONDED
+            - DECLINED
+        invitedAt:
+          type: string
+          format: date-time
+    InviteSuppliersInput:
+      type: object
+      properties:
+        supplierIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uuid
+      required:
+        - supplierIds
+    AdvanceDeadlineInput:
+      type: object
+      properties:
+        deadlineAt:
+          type: string
+          format: date-time
+      required:
+        - deadlineAt
+    LineResult:
+      type: object
+      properties:
+        rfqLineId:
+          type: string
+        quantityMilli:
+          type: integer
+          minimum: 1
+          description: Quantity in thousandths of a unit (20 units = 20000).
+        unitPriceMinor:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        lineTotalMinor:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        leadDays:
+          type: integer
+          minimum: 0
+        compliant:
+          type: boolean
+      required:
+        - rfqLineId
+        - quantityMilli
+        - unitPriceMinor
+        - lineTotalMinor
+        - leadDays
+        - compliant
+    CriterionPoints:
+      type: object
+      properties:
+        criterionId:
+          type: string
+        kind:
+          type: string
+          enum:
+            - PRICE
+            - QUALITATIVE
+        weightBps:
+          type: integer
+          minimum: 0
+          maximum: 10000
+          description: Basis points; 10000 = 100%.
+        evaluatorCount:
+          type: integer
+        pointsPpm:
+          type:
+            - integer
+            - 'null'
+          description: Parts per million of the 100-point scale (1000000 = 100.00 points).
+      required:
+        - criterionId
+        - kind
+        - weightBps
+        - evaluatorCount
+        - pointsPpm
+    BidComparisonRow:
+      type: object
+      properties:
+        bidId:
+          type: string
+        supplierId:
+          type: string
+        supplierName:
+          type: string
+        status:
+          type: string
+          enum:
+            - SUBMITTED
+            - WITHDRAWN
+        submittedAt:
+          type: string
+          format: date-time
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineResult'
+        totalMinor:
+          type:
+            - integer
+            - 'null'
+        maxLeadDays:
+          type:
+            - integer
+            - 'null'
+        qualified:
+          type: boolean
+        ineligibilityReasons:
+          type: array
+          items:
+            type: string
+            enum:
+              - WITHDRAWN
+              - DISQUALIFIED
+              - TECHNICALLY_NON_COMPLIANT
+              - CURRENCY_MISMATCH
+              - INCOMPLETE
+              - NON_POSITIVE_TOTAL
+        criteria:
+          type: array
+          items:
+            $ref: '#/components/schemas/CriterionPoints'
+        missingCriterionIds:
+          type: array
+          items:
+            type: string
+        totalScorePpm:
+          type:
+            - integer
+            - 'null'
+        rank:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+        isLowestPriced:
+          type: boolean
+        isLowestQualified:
+          type: boolean
+      required:
+        - bidId
+        - supplierId
+        - supplierName
+        - status
+        - submittedAt
+        - lines
+        - totalMinor
+        - maxLeadDays
+        - qualified
+        - ineligibilityReasons
+        - criteria
+        - missingCriterionIds
+        - totalScorePpm
+        - rank
+        - isLowestPriced
+        - isLowestQualified
+    BidComparison:
+      type: object
+      properties:
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+          examples:
+            - USD
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/BidComparisonRow'
+        lowestPricedBidId:
+          type:
+            - string
+            - 'null'
+        lowestQualifiedBidId:
+          type:
+            - string
+            - 'null'
+        lowestQualifiedTotalMinor:
+          type:
+            - integer
+            - 'null'
+        provisional:
+          type: boolean
+      required:
+        - currency
+        - rows
+        - lowestPricedBidId
+        - lowestQualifiedBidId
+        - lowestQualifiedTotalMinor
+        - provisional
+      description:
+        Output of compareBids() in @bidflow/shared (ADR-0014). Ranked qualified rows first,
+        then unranked rows.
+    EvaluationScore:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        bidId:
+          type: string
+          format: uuid
+        criterionId:
+          type: string
+          format: uuid
+        evaluatorId:
+          type: string
+          format: uuid
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+        rationale:
+          type: string
+    ScoreBidsInput:
+      type: object
+      properties:
+        scores:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            properties:
+              bidId:
+                type: string
+                format: uuid
+              criterionId:
+                type: string
+                format: uuid
+              score:
+                type: integer
+                minimum: 0
+                maximum: 100
+              rationale:
+                type: string
+            required:
+              - bidId
+              - criterionId
+              - score
+      required:
+        - scores
+    BidQualification:
+      type: object
+      properties:
+        bidId:
+          type: string
+          format: uuid
+        qualified:
+          type: boolean
+        decisionReason:
+          type: string
+        decidedBy:
+          type: string
+          format: uuid
+        decidedAt:
+          type: string
+          format: date-time
+    QualificationInput:
+      type: object
+      properties:
+        qualified:
+          type: boolean
+        reason:
+          type: string
+          minLength: 1
+      required:
+        - qualified
+        - reason
+    AwardRecommendation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        rfqId:
+          type: string
+          format: uuid
+        bidId:
+          type: string
+          format: uuid
+        bidRevision:
+          type: integer
+        evaluatorId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - PENDING_APPROVAL
+            - APPROVED
+            - REJECTED
+            - CLARIFICATION_REQUESTED
+        justification:
+          type: string
+        total:
+          $ref: '#/components/schemas/Money'
+        deviatesFromTopRanked:
+          type: boolean
+        awardSnapshot:
+          type: object
+          description: Immutable bid, criteria and score snapshot.
+    RecommendAwardInput:
+      type: object
+      properties:
+        bidId:
+          type: string
+          format: uuid
+        justification:
+          type: string
+          description: Required when the bid is not ranked first (B-11).
+      required:
+        - bidId
+    SupplierRfq:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        buyerName:
+          type: string
+        status:
+          type: string
+          enum:
+            - PUBLISHED
+            - CLOSED
+            - AWARDED
+            - CANCELLED
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+          examples:
+            - USD
+        deadlineAt:
+          type: string
+          format: date-time
+        revision:
+          type: integer
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/RfqLine'
+        terms:
+          type: string
+      description: 'Supplier-facing projection: no competitor identities, scores or budgets (ADR-0015).'
+    SupplierBidLine:
+      type: object
+      properties:
+        rfqLineId:
+          type: string
+          format: uuid
+        unitPriceMinor:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        quantityConfirmed:
+          type: boolean
+        leadDays:
+          type: integer
+          minimum: 0
+        compliant:
+          type: boolean
+        notes:
+          type: string
+      required:
+        - rfqLineId
+        - unitPriceMinor
+        - leadDays
+        - compliant
+    SupplierBid:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        rfqId:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+        status:
+          type: string
+          enum:
+            - DRAFT
+            - SUBMITTED
+            - WITHDRAWN
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+          examples:
+            - USD
+        submittedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        notes:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/SupplierBidLine'
+        total:
+          $ref: '#/components/schemas/Money'
+    SaveBidInput:
+      type: object
+      properties:
+        notes:
+          type: string
+        lines:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/SupplierBidLine'
+        version:
+          type: integer
+      required:
+        - lines
+    SupplierOutcome:
+      type: object
+      properties:
+        rfqId:
+          type: string
+          format: uuid
+        outcome:
+          type: string
+          enum:
+            - PENDING
+            - AWARDED
+            - NOT_AWARDED
+            - CANCELLED
+        decidedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+    PurchaseOrderLine:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        rfqLineId:
+          type: string
+          format: uuid
+        description:
+          type: string
+        quantityMilli:
+          type: integer
+          minimum: 1
+          description: Quantity in thousandths of a unit (20 units = 20000).
+        unitPriceMinor:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        lineTotalMinor:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        receivedQuantityMilli:
+          type: integer
+          minimum: 0
+        outstandingQuantityMilli:
+          type: integer
+          minimum: 0
+    PurchaseOrder:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        poCode:
+          type: string
+          examples:
+            - PO-2026-0003
+        awardId:
+          type: string
+          format: uuid
+        supplierId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - DRAFT
+            - ISSUED
+            - PARTIALLY_RECEIVED
+            - FULLY_RECEIVED
+            - CANCELLED
+        total:
+          $ref: '#/components/schemas/Money'
+        issuedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        deliveryAddress:
+          type: string
+        termsSnapshot:
+          type: object
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/PurchaseOrderLine'
+        version:
+          type: integer
+    Receipt:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        purchaseOrderId:
+          type: string
+          format: uuid
+        recordedBy:
+          type: string
+          format: uuid
+        receivedAt:
+          type: string
+          format: date-time
+        note:
+          type: string
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              purchaseOrderLineId:
+                type: string
+                format: uuid
+              quantityReceivedMilli:
+                type: integer
+                minimum: 1
+                description: Quantity in thousandths of a unit (20 units = 20000).
+    RecordReceiptInput:
+      type: object
+      properties:
+        receivedAt:
+          type: string
+          format: date-time
+        note:
+          type: string
+        lines:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            properties:
+              purchaseOrderLineId:
+                type: string
+                format: uuid
+              quantityReceivedMilli:
+                type: integer
+                minimum: 1
+                description: Quantity in thousandths of a unit (20 units = 20000).
+            required:
+              - purchaseOrderLineId
+              - quantityReceivedMilli
+      required:
+        - receivedAt
+        - lines
+      description: Cumulative received quantity may not exceed ordered quantity (B-15).
+    DashboardMetrics:
+      type: object
+      properties:
+        pendingApprovals:
+          type: integer
+        approvedRequests:
+          type: integer
+        rfqsClosingSoon:
+          type: integer
+        activePurchaseOrders:
+          type: integer
+        outstandingReceipts:
+          type: integer
+        lateDeliveries:
+          type: integer
+        committedValue:
+          $ref: '#/components/schemas/Money'
+    ReportTable:
+      type: object
+      properties:
+        columns:
+          type: array
+          items:
+            type: string
+        rows:
+          type: array
+          items:
+            type: array
+            items:
+              type:
+                - string
+                - integer
+                - 'null'
+        notes:
+          type: array
+          items:
+            type: string
+          description: Missing data is reported as "Not available", never invented.
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+            - APPROVAL_REQUESTED
+            - RFQ_PUBLISHED
+            - BID_SUBMITTED
+            - RFQ_CLOSING
+            - AWARD_DECIDED
+            - DELIVERY_OVERDUE
+        title:
+          type: string
+        entityType:
+          type: string
+        entityId:
+          type: string
+        readAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    AuditEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+        actorUserId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        action:
+          type: string
+          examples:
+            - department.created
+        entityType:
+          type: string
+        entityId:
+          type:
+            - string
+            - 'null'
+        metadata:
+          type: object
+        requestId:
+          type:
+            - string
+            - 'null'
+        occurredAt:
+          type: string
+          format: date-time
+    UpdateProfileInput:
+      type: object
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 200
+      required:
+        - displayName
+    ChangePasswordInput:
+      type: object
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
+          type: string
+          minLength: 12
+      required:
+        - currentPassword
+        - newPassword

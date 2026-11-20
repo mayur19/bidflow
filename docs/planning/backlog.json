@@ -1,0 +1,1059 @@
+{
+  "project": "bidflow",
+  "ticketPrefix": "BF",
+  "milestones": [
+    {
+      "id": "M0",
+      "title": "M0: Foundation",
+      "description": "Monorepo, launcher, authentication, sessions, CSRF, migrations, audit table, actor model, pending API surface and development seed."
+    },
+    {
+      "id": "M1",
+      "title": "M1: Organization, budgets and domain core",
+      "description": "Departments with budgets, organization settings, integer money and the bid comparison engine that later milestones build on."
+    },
+    {
+      "id": "M2",
+      "title": "M2: Purchase requests and approvals",
+      "description": "Purchase request lifecycle, immutable revisions, threshold-based approval routing, no-self-approval and attachments."
+    },
+    {
+      "id": "M3",
+      "title": "M3: Suppliers and RFQ events",
+      "description": "Supplier directory, supplier logins, RFQ creation from approved requests, criteria, publish/freeze, invitations and server-side deadlines."
+    },
+    {
+      "id": "M4",
+      "title": "M4: Supplier portal and bidding",
+      "description": "Isolated supplier portal, sealed bid drafts and revisions, deadline-safe submission and withdrawal."
+    },
+    {
+      "id": "M5",
+      "title": "M5: Evaluation and award",
+      "description": "Comparison matrix on persisted bids, evaluator scoring, disqualification, award recommendation and finance approval with snapshots."
+    },
+    {
+      "id": "M6",
+      "title": "M6: Purchase orders and receiving",
+      "description": "PO issue with budget commitment control, print-ready PO, partial receipts, over-receipt rejection and idempotent financial POSTs."
+    },
+    {
+      "id": "M7",
+      "title": "M7: Reporting, notifications and governance",
+      "description": "Dashboard, spend and supplier reports, CSV export, in-app notifications, audit log viewer and account settings."
+    },
+    {
+      "id": "M8",
+      "title": "M8: Acceptance and hardening",
+      "description": "Full PRD §8 demo dataset, Playwright acceptance suite B-01..B-18, security and accessibility verification, deployment pipeline."
+    }
+  ],
+  "tickets": [
+    {
+      "id": "BF-001",
+      "title": "Set up monorepo, run.sh launcher and CI pipeline",
+      "milestone": "M0",
+      "prdRefs": ["§2", "§10"],
+      "adrRefs": ["ADR-0002", "ADR-0010"],
+      "estimateHours": 4,
+      "status": "done",
+      "dependsOn": [],
+      "labels": ["devops"],
+      "description": "npm-workspaces monorepo with API, web and shared packages, a single run.sh entry point and a GitHub Actions pipeline. A fresh clone must reach a running app with one command.",
+      "acceptanceCriteria": [
+        "./run.sh takes a fresh clone to a running API and web UI",
+        "./run.sh check runs lint, format, typecheck and tests",
+        "CI runs secret scan, lint, typecheck, tests with coverage and build on every push"
+      ]
+    },
+    {
+      "id": "BF-002",
+      "title": "Implement session authentication with scrypt, CSRF and rate limiting",
+      "milestone": "M0",
+      "prdRefs": ["§2", "§3", "§11"],
+      "adrRefs": ["ADR-0005", "ADR-0006"],
+      "estimateHours": 4,
+      "status": "done",
+      "dependsOn": ["BF-001"],
+      "labels": ["security", "backend"],
+      "description": "Server-side sessions with hashed tokens, scrypt password hashing, HMAC CSRF tokens bound to the session and rate limiting on login. Generic login errors avoid account enumeration.",
+      "acceptanceCriteria": [
+        "Login sets an HttpOnly SameSite=Lax cookie and returns a CSRF token",
+        "Unsafe requests without a valid CSRF token are rejected with 403",
+        "Wrong password, unknown email and inactive user return the same 401"
+      ]
+    },
+    {
+      "id": "BF-003",
+      "title": "Add migration runner, append-only audit table and health checks",
+      "milestone": "M0",
+      "prdRefs": ["FR-10", "§2"],
+      "adrRefs": ["ADR-0004", "ADR-0008"],
+      "estimateHours": 3,
+      "status": "done",
+      "dependsOn": ["BF-001"],
+      "labels": ["database", "backend"],
+      "description": "Forward-only SQL migrations with checksums, an audit_events table written in the same transaction as state changes, and liveness/readiness endpoints.",
+      "acceptanceCriteria": [
+        "Migrations apply in order and refuse edited files",
+        "Running migrations twice applies nothing",
+        "/api/health/ready returns 503 when PostgreSQL is unreachable"
+      ]
+    },
+    {
+      "id": "BF-004",
+      "title": "Define buyer actor model and RBAC permission matrix",
+      "milestone": "M0",
+      "prdRefs": ["§3"],
+      "adrRefs": ["ADR-0007"],
+      "estimateHours": 2,
+      "status": "done",
+      "dependsOn": ["BF-002"],
+      "labels": ["security", "backend"],
+      "description": "Replace template roles with the six PRD §3 roles and a shared permission matrix used by API guards and web navigation. Migration 0002 adds a CHECK constraint on users.role.",
+      "acceptanceCriteria": [
+        "ROLES matches PRD §3 exactly",
+        "requirePermission returns 401 unauthenticated and 403 for roles outside the matrix",
+        "Database rejects unknown role values"
+      ]
+    },
+    {
+      "id": "BF-005",
+      "title": "Seed development organizations, role logins and departments",
+      "milestone": "M0",
+      "prdRefs": ["§8", "FR-01"],
+      "adrRefs": ["ADR-0009"],
+      "estimateHours": 2,
+      "status": "done",
+      "dependsOn": ["BF-004"],
+      "labels": ["database"],
+      "description": "Idempotent development-only seed with Cedar Grove Hotels and Harborview Clinics, one login per role in the primary organization, an admin in the secondary organization and departments in both.",
+      "acceptanceCriteria": [
+        "Seed refuses to run when NODE_ENV=production",
+        "Re-running the seed creates no duplicates",
+        "Every demo login is documented in README"
+      ]
+    },
+    {
+      "id": "BF-006",
+      "title": "Register pending API surface and navigation with ticket ids",
+      "milestone": "M0",
+      "prdRefs": ["§4", "§7"],
+      "adrRefs": ["ADR-0006"],
+      "estimateHours": 2,
+      "status": "done",
+      "dependsOn": ["BF-004"],
+      "labels": ["backend", "frontend"],
+      "description": "Register every PRD §7 endpoint as a pending route with its permission and ticket so the contract is explicit, and list every PRD §4 screen in navigation with role visibility.",
+      "acceptanceCriteria": [
+        "Pending endpoints return 401/403 before 501 with their ticket id",
+        "Every PRD §4 screen appears in navigation or is reachable from a listed screen",
+        "An HTTP test asserts a sample of pending routes"
+      ]
+    },
+    {
+      "id": "BF-007",
+      "title": "Build money module: minor units, basis points, rounding and formatting",
+      "milestone": "M1",
+      "prdRefs": ["§2", "FR-06", "FR-08"],
+      "adrRefs": ["ADR-0013"],
+      "estimateHours": 4,
+      "status": "done",
+      "dependsOn": ["BF-001"],
+      "labels": ["backend", "testing"],
+      "description": "Integer minor-unit Money with currency, basis-point rates, fixed-point quantities, one documented rounding rule (half up, once), safe price × quantity with overflow guards and float-free parsing/formatting for the web.",
+      "acceptanceCriteria": [
+        "No floating-point arithmetic on amounts",
+        "Unit price × fractional quantity rounds once, half up",
+        "Overflow beyond the safe integer range throws AMOUNT_OVERFLOW",
+        "100% branch coverage on domain files"
+      ]
+    },
+    {
+      "id": "BF-008",
+      "title": "Build bid comparison and weighted scoring engine",
+      "milestone": "M1",
+      "prdRefs": ["FR-06", "FR-07", "B-09", "B-10", "B-11"],
+      "adrRefs": ["ADR-0014"],
+      "estimateHours": 5,
+      "status": "done",
+      "dependsOn": ["BF-007"],
+      "labels": ["backend", "testing"],
+      "description": "Pure, deterministic engine computing line and bid totals, lowest-priced vs lowest qualified bid, FR-06 price normalization, weighted qualitative scores, ranking with deterministic tie-breaking and recommendation eligibility.",
+      "acceptanceCriteria": [
+        "Weights not totalling 100% are rejected with a clear message (B-09)",
+        "A disqualified or non-compliant cheapest bid is shown but excluded from normalization and ranking (B-10)",
+        "Recommending a non-top-ranked bid requires justification (B-11)",
+        "Ties resolve by price, lead time, submission time, then bid id"
+      ]
+    },
+    {
+      "id": "BF-009",
+      "title": "Implement departments with budgets API (list, create, get)",
+      "milestone": "M1",
+      "prdRefs": ["FR-01", "B-18"],
+      "adrRefs": ["ADR-0003", "ADR-0007", "ADR-0008", "ADR-0013"],
+      "estimateHours": 4,
+      "status": "done",
+      "dependsOn": ["BF-004", "BF-007"],
+      "labels": ["backend", "database"],
+      "description": "Tenant-scoped department repository, service and routes with zod validation, pagination and search, budgets stored as bigint minor units in the organization currency, and an audit event in the same transaction.",
+      "acceptanceCriteria": [
+        "List, create and get are scoped to the session organization",
+        "Create is limited to Buyer Admin; suppliers and receiving clerks get 403",
+        "Duplicate codes return 409 and leave no audit row",
+        "Budget currency is taken from the organization, never the request"
+      ]
+    },
+    {
+      "id": "BF-010",
+      "title": "Build departments and budgets screen",
+      "milestone": "M1",
+      "prdRefs": ["FR-01", "§4.3"],
+      "adrRefs": ["ADR-0013"],
+      "estimateHours": 2,
+      "status": "done",
+      "dependsOn": ["BF-009"],
+      "labels": ["frontend", "ux"],
+      "description": "Departments list with search, formatted budgets and empty/error states, plus an admin-only create form that converts major-unit input to integer minor units without floats.",
+      "acceptanceCriteria": [
+        "Budgets display as e.g. USD 180,000.00",
+        "Create form rejects more decimals than the currency allows",
+        "Non-admin roles see the list without the form"
+      ]
+    },
+    {
+      "id": "BF-011",
+      "title": "Prove department tenant isolation and RBAC against PostgreSQL",
+      "milestone": "M1",
+      "prdRefs": ["FR-01", "B-18"],
+      "adrRefs": ["ADR-0003", "ADR-0010"],
+      "estimateHours": 2,
+      "status": "done",
+      "dependsOn": ["BF-009"],
+      "labels": ["testing", "security"],
+      "description": "Integration suite against a disposable PostgreSQL database proving that a second buyer organization cannot list or read the first organization's departments and that role enforcement holds.",
+      "acceptanceCriteria": [
+        "Org B reading an Org A department id returns 404 with no data",
+        "Requester can read but not create; supplier and clerk get 403",
+        "Audit row is written exactly once per create"
+      ]
+    },
+    {
+      "id": "BF-012",
+      "title": "Implement organization settings: currency, timezone, approval threshold",
+      "milestone": "M1",
+      "prdRefs": ["FR-01"],
+      "adrRefs": ["ADR-0013", "ADR-0016"],
+      "estimateHours": 3,
+      "status": "pending",
+      "dependsOn": ["BF-009"],
+      "labels": ["backend", "frontend"],
+      "description": "Buyer Admin manages the organization default currency, display timezone and spend-approval threshold (minor units). The threshold feeds approval routing and award checks.",
+      "acceptanceCriteria": [
+        "Only Buyer Admin can update settings",
+        "Threshold is stored as integer minor units",
+        "Currency cannot change once purchase requests exist"
+      ]
+    },
+    {
+      "id": "BF-013",
+      "title": "Add department update/deactivate and cost centers",
+      "milestone": "M1",
+      "prdRefs": ["FR-01"],
+      "adrRefs": ["ADR-0003"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-009"],
+      "labels": ["backend", "database"],
+      "description": "PATCH departments with optimistic locking on version, deactivation that preserves history, and cost centers per department.",
+      "acceptanceCriteria": [
+        "Stale version returns 409",
+        "Deactivated departments cannot receive new requests",
+        "Cost center codes are unique per organization"
+      ]
+    },
+    {
+      "id": "BF-014",
+      "title": "Add budget periods and requested/approved/committed rollups",
+      "milestone": "M1",
+      "prdRefs": ["FR-01"],
+      "adrRefs": ["ADR-0013", "ADR-0018"],
+      "estimateHours": 5,
+      "status": "pending",
+      "dependsOn": ["BF-013"],
+      "labels": ["backend", "database"],
+      "description": "Per-period budgets table and read model showing requested, approved and committed amounts with definitions. Budget is a planning control, not a ledger.",
+      "acceptanceCriteria": [
+        "Rollups are computed from persisted requests and POs",
+        "Definitions are shown next to each figure",
+        "Missing data displays as Not available"
+      ]
+    },
+    {
+      "id": "BF-015",
+      "title": "Implement user and department membership administration",
+      "milestone": "M1",
+      "prdRefs": ["§3", "FR-01"],
+      "adrRefs": ["ADR-0007"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-004"],
+      "labels": ["backend", "frontend", "security"],
+      "description": "Buyer Admin creates and deactivates users, assigns roles and department memberships. Requests are only allowed for departments the requester belongs to.",
+      "acceptanceCriteria": [
+        "Admin cannot remove the last Buyer Admin",
+        "Deactivated users lose active sessions",
+        "Membership is checked on every purchase request write"
+      ]
+    },
+    {
+      "id": "BF-016",
+      "title": "Create purchase request schema, codes and line items",
+      "milestone": "M2",
+      "prdRefs": ["FR-02"],
+      "adrRefs": ["ADR-0013", "ADR-0017"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-009"],
+      "labels": ["database"],
+      "description": "Migration for purchase_requests and purchase_request_lines with numeric quantities, minor-unit estimates, version and per-organization unique request codes.",
+      "acceptanceCriteria": [
+        "Codes are unique per organization and generated server-side",
+        "Quantities must be positive",
+        "Every table carries organization_id"
+      ]
+    },
+    {
+      "id": "BF-017",
+      "title": "Build purchase request create, list and detail API",
+      "milestone": "M2",
+      "prdRefs": ["FR-02", "B-01"],
+      "adrRefs": ["ADR-0003", "ADR-0006"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-016", "BF-015"],
+      "labels": ["backend"],
+      "description": "Requesters create draft requests with validated lines; list supports status/department filters and pagination; detail returns lines and history.",
+      "acceptanceCriteria": [
+        "Rows with zero or negative quantity are rejected",
+        "Requesters only see requests they may access",
+        "Filters and pagination follow API conventions"
+      ]
+    },
+    {
+      "id": "BF-018",
+      "title": "Implement submit, revise and cancel with immutable revisions",
+      "milestone": "M2",
+      "prdRefs": ["FR-02", "B-01"],
+      "adrRefs": ["ADR-0017"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-017"],
+      "labels": ["backend"],
+      "description": "Submission freezes a revision snapshot; editing after submission creates a revised draft requiring resubmission while decision history remains; cancel requires a reason.",
+      "acceptanceCriteria": [
+        "Submitted revision is immutable",
+        "Revise creates a new draft revision and keeps prior decisions",
+        "Invalid transitions return INVALID_STATE_TRANSITION"
+      ]
+    },
+    {
+      "id": "BF-019",
+      "title": "Build approval routing rules for manager and over-threshold finance steps",
+      "milestone": "M2",
+      "prdRefs": ["FR-02", "B-03"],
+      "adrRefs": ["ADR-0016", "ADR-0017"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-018", "BF-012"],
+      "labels": ["backend", "testing"],
+      "description": "Pure rules generating ordered approval steps: department manager approval, plus finance approval when the estimate exceeds the organization threshold.",
+      "acceptanceCriteria": [
+        "Requests above threshold get an ordered finance step",
+        "Threshold comparison uses integer minor units",
+        "Unit tests cover boundary values"
+      ]
+    },
+    {
+      "id": "BF-020",
+      "title": "Implement approvals inbox and decision API with no-self-approval",
+      "milestone": "M2",
+      "prdRefs": ["FR-02", "FR-07", "B-02", "B-03"],
+      "adrRefs": ["ADR-0007", "ADR-0008"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-019"],
+      "labels": ["backend", "security"],
+      "description": "Approvers list pending steps and approve/reject/request clarification. The API denies decisions by the request author and writes ordered audit events.",
+      "acceptanceCriteria": [
+        "Requester approving own request is denied by the API (B-02)",
+        "Finance approval above threshold changes status and audits in order (B-03)",
+        "Decisions are idempotent on retry"
+      ]
+    },
+    {
+      "id": "BF-021",
+      "title": "Build purchase request list, editor and detail timeline screens",
+      "milestone": "M2",
+      "prdRefs": ["FR-02", "§4.4", "§4.5", "§4.6"],
+      "adrRefs": ["ADR-0013"],
+      "estimateHours": 6,
+      "status": "pending",
+      "dependsOn": ["BF-018"],
+      "labels": ["frontend", "ux"],
+      "description": "List with filters, line-item editor with money and quantity inputs, and detail page with attachments and approval timeline.",
+      "acceptanceCriteria": [
+        "Editor validates quantities and amounts before submit",
+        "Timeline shows each decision with actor and time",
+        "Irreversible actions ask for confirmation"
+      ]
+    },
+    {
+      "id": "BF-022",
+      "title": "Store attachments on local disk with type and size limits",
+      "milestone": "M2",
+      "prdRefs": ["FR-02", "FR-05", "§2"],
+      "adrRefs": ["ADR-0011"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-017"],
+      "labels": ["backend", "security"],
+      "description": "Attachment upload for requests and bids with MIME/extension allow-list, size limit, random storage names and tenant-checked downloads.",
+      "acceptanceCriteria": [
+        "Disallowed types and oversize files are rejected",
+        "Files are served only to authorized users of the owning record",
+        "Metadata is stored in SQL, bytes on disk"
+      ]
+    },
+    {
+      "id": "BF-023",
+      "title": "Build approvals inbox screen",
+      "milestone": "M2",
+      "prdRefs": ["FR-02", "FR-07", "§4.2", "§4.14"],
+      "adrRefs": ["ADR-0016"],
+      "estimateHours": 3,
+      "status": "pending",
+      "dependsOn": ["BF-020"],
+      "labels": ["frontend"],
+      "description": "Inbox of pending approval steps for requests and awards with approve, reject and request-clarification actions.",
+      "acceptanceCriteria": [
+        "Only steps the user may decide are listed",
+        "Decision requires a reason when rejecting",
+        "Empty state explains there is nothing to approve"
+      ]
+    },
+    {
+      "id": "BF-024",
+      "title": "Implement supplier directory API with activate/deactivate",
+      "milestone": "M3",
+      "prdRefs": ["FR-03"],
+      "adrRefs": ["ADR-0015"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-009"],
+      "labels": ["backend", "database"],
+      "description": "Supplier organization profiles (contact, categories, tax-registration text, country, status, notes) scoped to the buyer organization. Deactivation blocks new responses and preserves submissions.",
+      "acceptanceCriteria": [
+        "Deactivated suppliers cannot submit new bids",
+        "Existing submissions remain visible for audit",
+        "Tax registration is stored as unverified text"
+      ]
+    },
+    {
+      "id": "BF-025",
+      "title": "Provision supplier logins and supplier memberships",
+      "milestone": "M3",
+      "prdRefs": ["FR-03", "§2"],
+      "adrRefs": ["ADR-0015", "ADR-0005"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-024"],
+      "labels": ["backend", "security"],
+      "description": "Buyer admin or procurement provisions a supplier user login linked to a supplier organization and records the portal invitation in the database. No email is sent.",
+      "acceptanceCriteria": [
+        "Supplier users are linked to exactly one supplier organization",
+        "Provisioning is audited",
+        "UI never claims an email was sent"
+      ]
+    },
+    {
+      "id": "BF-026",
+      "title": "Build supplier directory screen",
+      "milestone": "M3",
+      "prdRefs": ["FR-03", "§4.7"],
+      "adrRefs": [],
+      "estimateHours": 3,
+      "status": "pending",
+      "dependsOn": ["BF-024"],
+      "labels": ["frontend"],
+      "description": "Searchable supplier list with status badges, profile detail and activate/deactivate with confirmation.",
+      "acceptanceCriteria": [
+        "Status changes require confirmation",
+        "Search filters by name and category",
+        "Inactive suppliers are clearly marked"
+      ]
+    },
+    {
+      "id": "BF-027",
+      "title": "Create RFQs from approved requests with line snapshots",
+      "milestone": "M3",
+      "prdRefs": ["FR-04"],
+      "adrRefs": ["ADR-0017"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-018", "BF-024"],
+      "labels": ["backend", "database"],
+      "description": "Procurement creates an RFQ only from an approved purchase request; request lines are snapshotted into rfq_lines and can be clarified while in draft.",
+      "acceptanceCriteria": [
+        "RFQ creation from a non-approved request is rejected",
+        "RFQ currency is fixed to the request currency",
+        "Draft lines can be clarified; request lines are unchanged"
+      ]
+    },
+    {
+      "id": "BF-028",
+      "title": "Configure evaluation criteria and block invalid weights on publish",
+      "milestone": "M3",
+      "prdRefs": ["FR-04", "FR-06", "B-09"],
+      "adrRefs": ["ADR-0014"],
+      "estimateHours": 3,
+      "status": "pending",
+      "dependsOn": ["BF-027", "BF-008"],
+      "labels": ["backend"],
+      "description": "Persist evaluation_criteria with weight_bps and validate with the shared engine; publishing or evaluation is blocked when weights do not total 100%.",
+      "acceptanceCriteria": [
+        "Publishing with weights totalling 95% returns 422 with WEIGHTS_NOT_100_PERCENT (B-09)",
+        "Exactly one price criterion is required",
+        "Criteria are frozen after publication"
+      ]
+    },
+    {
+      "id": "BF-029",
+      "title": "Publish RFQs, freeze requirements and handle amendments",
+      "milestone": "M3",
+      "prdRefs": ["FR-04", "B-04"],
+      "adrRefs": ["ADR-0017"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-028"],
+      "labels": ["backend"],
+      "description": "Publishing freezes commercial line definitions; any material amendment creates a new revision and notifies invitees in-app. No silent edits.",
+      "acceptanceCriteria": [
+        "Edits to published lines are rejected",
+        "Amendment increments revision and notifies invitees",
+        "Publication is audited"
+      ]
+    },
+    {
+      "id": "BF-030",
+      "title": "Manage RFQ invitations and invitation states",
+      "milestone": "M3",
+      "prdRefs": ["FR-04", "B-04"],
+      "adrRefs": ["ADR-0015"],
+      "estimateHours": 3,
+      "status": "pending",
+      "dependsOn": ["BF-029", "BF-025"],
+      "labels": ["backend"],
+      "description": "Invite active suppliers to an RFQ with one invitation per supplier and track states (invited, viewed, responded, declined).",
+      "acceptanceCriteria": [
+        "Duplicate invitations are prevented by UNIQUE(rfq_id, supplier_org_id)",
+        "Invited supplier portals show the RFQ after publication (B-04)",
+        "Inactive suppliers cannot be invited"
+      ]
+    },
+    {
+      "id": "BF-031",
+      "title": "Enforce RFQ deadlines server-side with manual close and demo clock",
+      "milestone": "M3",
+      "prdRefs": ["FR-04", "B-08"],
+      "adrRefs": ["ADR-0017"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-029"],
+      "labels": ["backend", "testing"],
+      "description": "Deadline is stored in UTC and enforced with the server clock; buyers may close early with an audited reason; an admin-only demo action advances simulated deadlines for tests.",
+      "acceptanceCriteria": [
+        "Submissions after the deadline are rejected regardless of client clock (B-08)",
+        "Early close requires a reason and is audited",
+        "Demo clock advance is unavailable in production"
+      ]
+    },
+    {
+      "id": "BF-032",
+      "title": "Build RFQ list, creation wizard and detail screens",
+      "milestone": "M3",
+      "prdRefs": ["FR-04", "§4.8", "§4.9", "§4.10"],
+      "adrRefs": [],
+      "estimateHours": 6,
+      "status": "pending",
+      "dependsOn": ["BF-030", "BF-031"],
+      "labels": ["frontend", "ux"],
+      "description": "RFQ list with stage tabs and search, a wizard for scope, lines, suppliers, criteria and deadline, and a detail page with invitation states.",
+      "acceptanceCriteria": [
+        "Wizard shows live weight total and blocks invalid totals",
+        "Deadline is shown in the organization timezone",
+        "Publishing asks for confirmation"
+      ]
+    },
+    {
+      "id": "BF-033",
+      "title": "Enforce supplier portal isolation and record-level guards",
+      "milestone": "M4",
+      "prdRefs": ["FR-03", "FR-05", "B-05", "B-06"],
+      "adrRefs": ["ADR-0015"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-030"],
+      "labels": ["backend", "security"],
+      "description": "Supplier namespace that resolves the caller's supplier organization from the session and only returns RFQs it is invited to. Competitor identities, scores and budgets never appear in supplier payloads.",
+      "acceptanceCriteria": [
+        "Uninvited supplier opening an RFQ id gets 404 with no content (B-05)",
+        "Supplier A requesting supplier B's bid gets 404 (B-06)",
+        "Supplier payloads contain no internal scores or budgets"
+      ]
+    },
+    {
+      "id": "BF-034",
+      "title": "Implement supplier bid drafts and revisions",
+      "milestone": "M4",
+      "prdRefs": ["FR-05", "B-07"],
+      "adrRefs": ["ADR-0015", "ADR-0017"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-033"],
+      "labels": ["backend", "database"],
+      "description": "One current bid per supplier and RFQ; saving creates a new revision and preserves previous versions. Lines capture unit price (minor units), quantity confirmation, lead time and compliance.",
+      "acceptanceCriteria": [
+        "Draft save persists a new revision",
+        "Previous revisions remain readable to the supplier",
+        "Prices are validated as integer minor units in the RFQ currency"
+      ]
+    },
+    {
+      "id": "BF-035",
+      "title": "Implement bid submit and withdraw with deadline checks",
+      "milestone": "M4",
+      "prdRefs": ["FR-05", "B-07", "B-08"],
+      "adrRefs": ["ADR-0017"],
+      "estimateHours": 3,
+      "status": "pending",
+      "dependsOn": ["BF-034", "BF-031"],
+      "labels": ["backend"],
+      "description": "Submit records the submitted timestamp from the server clock; withdraw is allowed before close; submitted bids become read-only at close. Supplier can read its own award outcome.",
+      "acceptanceCriteria": [
+        "Submitted timestamp and revision persist (B-07)",
+        "Late submit is rejected (B-08)",
+        "Withdrawn bids cannot win"
+      ]
+    },
+    {
+      "id": "BF-036",
+      "title": "Build supplier portal screens: invitations and response form",
+      "milestone": "M4",
+      "prdRefs": ["FR-05", "§4.11", "§4.12"],
+      "adrRefs": [],
+      "estimateHours": 6,
+      "status": "pending",
+      "dependsOn": ["BF-035", "BF-022"],
+      "labels": ["frontend", "ux"],
+      "description": "Responsive supplier portal listing invited RFQs and a response form with per-line price, lead time, compliance and attachments.",
+      "acceptanceCriteria": [
+        "Usable at 360px width",
+        "Form shows the RFQ currency and deadline countdown",
+        "Submit asks for confirmation"
+      ]
+    },
+    {
+      "id": "BF-037",
+      "title": "Wire persisted bids into the comparison endpoint",
+      "milestone": "M5",
+      "prdRefs": ["FR-06"],
+      "adrRefs": ["ADR-0014", "ADR-0015"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-035", "BF-008"],
+      "labels": ["backend"],
+      "description": "GET /rfqs/:id/comparison loads submitted bids, qualifications and scores after close and returns the engine output. Sealed bids are never returned before close.",
+      "acceptanceCriteria": [
+        "Endpoint returns 409 before the RFQ is closed",
+        "Matrix uses persisted bid data only",
+        "Cross-currency bids are rejected, not converted"
+      ]
+    },
+    {
+      "id": "BF-038",
+      "title": "Implement evaluator scoring and disqualification API",
+      "milestone": "M5",
+      "prdRefs": ["FR-06", "B-10"],
+      "adrRefs": ["ADR-0014", "ADR-0008"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-037"],
+      "labels": ["backend"],
+      "description": "Evaluators record 0-100 scores with rationale per qualitative criterion; disqualification and its clearance require a reason and are audited.",
+      "acceptanceCriteria": [
+        "Disqualified lowest bid is excluded from normalization and award (B-10)",
+        "Scores outside 0-100 return 422",
+        "Every score and qualification change is audited"
+      ]
+    },
+    {
+      "id": "BF-039",
+      "title": "Build bid comparison matrix screen",
+      "milestone": "M5",
+      "prdRefs": ["FR-06", "§4.13"],
+      "adrRefs": ["ADR-0014"],
+      "estimateHours": 5,
+      "status": "pending",
+      "dependsOn": ["BF-038"],
+      "labels": ["frontend", "ux"],
+      "description": "Matrix with RFQ lines as rows and qualified suppliers as columns, totals, lead times, normalized price points, weighted scores and flags for unqualified bids.",
+      "acceptanceCriteria": [
+        "Lowest-priced and lowest qualified bids are both labelled",
+        "Unqualified bids are shown with reasons but unranked",
+        "Scores display rounded to two decimals"
+      ]
+    },
+    {
+      "id": "BF-040",
+      "title": "Record award recommendations with bid and score snapshots",
+      "milestone": "M5",
+      "prdRefs": ["FR-06", "FR-07", "B-11"],
+      "adrRefs": ["ADR-0014", "ADR-0017"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-038"],
+      "labels": ["backend"],
+      "description": "Procurement recommends one bid for all lines with reasoning; the recommendation stores the selected bid revision, criteria and score snapshot. Non-top-ranked choices require justification.",
+      "acceptanceCriteria": [
+        "Non-top-ranked recommendation without justification is rejected (B-11)",
+        "Snapshot is immutable after creation",
+        "Unqualified bids cannot be recommended"
+      ]
+    },
+    {
+      "id": "BF-041",
+      "title": "Approve awards and create the PO draft exactly once",
+      "milestone": "M5",
+      "prdRefs": ["FR-07", "B-12", "B-17"],
+      "adrRefs": ["ADR-0016", "ADR-0017"],
+      "estimateHours": 5,
+      "status": "pending",
+      "dependsOn": ["BF-040", "BF-020"],
+      "labels": ["backend", "database"],
+      "description": "Finance approval is required when above threshold, over budget or non-top-ranked; the author cannot approve; an approved award creates a PO draft in the same transaction with a unique award constraint.",
+      "acceptanceCriteria": [
+        "Approved award creates exactly one PO draft with the bid snapshot (B-12)",
+        "Duplicate approval POSTs create no duplicate records (B-17)",
+        "Recommendation author cannot approve"
+      ]
+    },
+    {
+      "id": "BF-042",
+      "title": "Build award recommendation and approval screen",
+      "milestone": "M5",
+      "prdRefs": ["FR-07", "§4.14"],
+      "adrRefs": [],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-041"],
+      "labels": ["frontend"],
+      "description": "Award detail showing comparative scores, selected bid, deviation justification and the approval trail with decision actions.",
+      "acceptanceCriteria": [
+        "Deviation from top-ranked bid is highlighted",
+        "Approve/reject require confirmation",
+        "Snapshot values match the approved bid"
+      ]
+    },
+    {
+      "id": "BF-043",
+      "title": "Issue purchase orders with budget commitment control",
+      "milestone": "M6",
+      "prdRefs": ["FR-08", "B-13", "Goal 5"],
+      "adrRefs": ["ADR-0018", "ADR-0017"],
+      "estimateHours": 5,
+      "status": "pending",
+      "dependsOn": ["BF-041", "BF-014"],
+      "labels": ["backend", "security"],
+      "description": "Issuing a PO checks authorization, approval state and remaining department budget inside a transaction with row locks; over-budget issue is blocked unless a finance exception is approved.",
+      "acceptanceCriteria": [
+        "Unauthorized PO issue is denied and audited (B-13)",
+        "Issuing a PO that exceeds remaining budget without an approved exception is rejected",
+        "Issued price and line data are immutable"
+      ]
+    },
+    {
+      "id": "BF-044",
+      "title": "Build purchase order list/detail API and print-ready PO",
+      "milestone": "M6",
+      "prdRefs": ["FR-08", "§4.15"],
+      "adrRefs": ["ADR-0013"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-043"],
+      "labels": ["backend", "frontend"],
+      "description": "PO list and detail endpoints plus a print-friendly PO page with organization-specific PO number, lines, totals, approval references and terms.",
+      "acceptanceCriteria": [
+        "Print stylesheet renders a one-page PO",
+        "Totals are computed from integer minor units",
+        "Terminology says purchase order, never invoice"
+      ]
+    },
+    {
+      "id": "BF-045",
+      "title": "Record receipts with partial delivery and over-receipt rejection",
+      "milestone": "M6",
+      "prdRefs": ["FR-08", "B-14", "B-15", "B-17"],
+      "adrRefs": ["ADR-0017", "ADR-0018"],
+      "estimateHours": 5,
+      "status": "pending",
+      "dependsOn": ["BF-043"],
+      "labels": ["backend", "database"],
+      "description": "Receiving clerk records per-line received quantities; cumulative receipts cannot exceed ordered quantity; PO state moves to partially or fully received.",
+      "acceptanceCriteria": [
+        "Partial receipt updates outstanding quantity and PO state (B-14)",
+        "Over-receipt is rejected and persisted totals are unchanged (B-15)",
+        "Duplicate receipt POST creates one record (B-17)"
+      ]
+    },
+    {
+      "id": "BF-046",
+      "title": "Build receipts screen",
+      "milestone": "M6",
+      "prdRefs": ["FR-08", "§4.16"],
+      "adrRefs": [],
+      "estimateHours": 3,
+      "status": "pending",
+      "dependsOn": ["BF-045"],
+      "labels": ["frontend"],
+      "description": "Receipts page showing ordered, received and outstanding quantities per PO line with a receipt entry form.",
+      "acceptanceCriteria": [
+        "Outstanding quantity updates after a receipt",
+        "Over-receipt error is shown inline",
+        "Usable on tablet widths"
+      ]
+    },
+    {
+      "id": "BF-047",
+      "title": "Add idempotency keys for financial POST endpoints",
+      "milestone": "M6",
+      "prdRefs": ["FR-10", "B-17"],
+      "adrRefs": ["ADR-0006", "ADR-0017"],
+      "estimateHours": 3,
+      "status": "pending",
+      "dependsOn": ["BF-003"],
+      "labels": ["backend", "database"],
+      "description": "Idempotency-Key header support storing request hash and response for approval, award, PO issue and receipt endpoints.",
+      "acceptanceCriteria": [
+        "Replaying a key returns the original response",
+        "Reusing a key with a different body returns 409",
+        "Keys expire after 24 hours"
+      ]
+    },
+    {
+      "id": "BF-048",
+      "title": "Build buyer dashboard API and screen",
+      "milestone": "M7",
+      "prdRefs": ["FR-09", "§4.2"],
+      "adrRefs": ["ADR-0012"],
+      "estimateHours": 5,
+      "status": "pending",
+      "dependsOn": ["BF-045"],
+      "labels": ["backend", "frontend"],
+      "description": "Dashboard cards for pending approvals, RFQs closing soon, active POs, outstanding receipts, late deliveries and committed purchase value.",
+      "acceptanceCriteria": [
+        "Every figure is computed from persisted data",
+        "Missing data shows Not available",
+        "Cards link to filtered lists"
+      ]
+    },
+    {
+      "id": "BF-049",
+      "title": "Build spend and supplier performance reports with CSV export",
+      "milestone": "M7",
+      "prdRefs": ["FR-09", "§4.17"],
+      "adrRefs": ["ADR-0013"],
+      "estimateHours": 5,
+      "status": "pending",
+      "dependsOn": ["BF-045"],
+      "labels": ["backend", "frontend"],
+      "description": "Spend by department/category/supplier, average bids per RFQ, RFQ cycle time and delivery punctuality, with CSV export of authorized filtered data.",
+      "acceptanceCriteria": [
+        "CSV contains only rows the user may see",
+        "Amounts export as plain decimals from minor units",
+        "Percentages are never invented when data is missing"
+      ]
+    },
+    {
+      "id": "BF-050",
+      "title": "Deliver in-app notifications and background worker",
+      "milestone": "M7",
+      "prdRefs": ["FR-09", "§4.18"],
+      "adrRefs": ["ADR-0012"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-029", "BF-041"],
+      "labels": ["backend", "frontend"],
+      "description": "Notification inbox and a polling worker for RFQ closing and delivery overdue alerts; event-driven alerts for approval requested, RFQ published, bid submitted and award decided.",
+      "acceptanceCriteria": [
+        "Notifications are scoped to the recipient",
+        "Worker is idempotent across restarts",
+        "No external email is sent"
+      ]
+    },
+    {
+      "id": "BF-051",
+      "title": "Build audit log API and viewer",
+      "milestone": "M7",
+      "prdRefs": ["FR-10", "§4.18"],
+      "adrRefs": ["ADR-0008"],
+      "estimateHours": 3,
+      "status": "pending",
+      "dependsOn": ["BF-003"],
+      "labels": ["backend", "frontend"],
+      "description": "Paginated, filterable read access to audit_events for admins and finance with actor, entity, event type, timestamp and snapshot hashes.",
+      "acceptanceCriteria": [
+        "Only the caller organization's events are returned",
+        "Filters by entity and action",
+        "No endpoint can modify audit events"
+      ]
+    },
+    {
+      "id": "BF-052",
+      "title": "Build account settings screen",
+      "milestone": "M7",
+      "prdRefs": ["§4.18"],
+      "adrRefs": ["ADR-0005"],
+      "estimateHours": 2,
+      "status": "pending",
+      "dependsOn": ["BF-002"],
+      "labels": ["frontend", "security"],
+      "description": "Profile display name and password change with current-password verification; password change revokes other sessions.",
+      "acceptanceCriteria": [
+        "Password change requires the current password",
+        "Other sessions are revoked after change",
+        "Minimum password length is enforced"
+      ]
+    },
+    {
+      "id": "BF-053",
+      "title": "Seed the full PRD §8 demonstration dataset",
+      "milestone": "M8",
+      "prdRefs": ["§8"],
+      "adrRefs": ["ADR-0009"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-045", "BF-050"],
+      "labels": ["database", "testing"],
+      "description": "Extend the development seed with suppliers, the 20-unit air-conditioning request, an RFQ with three bids including a cheapest unqualified bid, an award pending finance approval, an issued PO with 40% received and an expired RFQ.",
+      "acceptanceCriteria": [
+        "Seed reproduces every PRD §8 scenario on a reset database",
+        "Seed stays idempotent",
+        "Data is clearly development-only"
+      ]
+    },
+    {
+      "id": "BF-054",
+      "title": "Automate acceptance tests B-01 to B-04 in Playwright",
+      "milestone": "M8",
+      "prdRefs": ["B-01", "B-02", "B-03", "B-04"],
+      "adrRefs": ["ADR-0010"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-053"],
+      "labels": ["testing"],
+      "description": "Playwright scenarios for request submission, self-approval denial, finance approval above threshold and RFQ publication against the real database.",
+      "acceptanceCriteria": [
+        "Scenarios run on a reset local dataset",
+        "Each scenario asserts both UI and API outcomes",
+        "Suite runs in CI"
+      ]
+    },
+    {
+      "id": "BF-055",
+      "title": "Automate acceptance tests B-05 to B-09 in Playwright",
+      "milestone": "M8",
+      "prdRefs": ["B-05", "B-06", "B-07", "B-08", "B-09"],
+      "adrRefs": ["ADR-0010", "ADR-0015"],
+      "estimateHours": 5,
+      "status": "pending",
+      "dependsOn": ["BF-053"],
+      "labels": ["testing", "security"],
+      "description": "Playwright and API scenarios for supplier isolation, bid draft and submit, late submission and invalid criteria weights.",
+      "acceptanceCriteria": [
+        "Direct API calls by the wrong supplier return 403/404",
+        "Late submit uses the demo clock and is rejected",
+        "Invalid weights block publication"
+      ]
+    },
+    {
+      "id": "BF-056",
+      "title": "Automate acceptance tests B-10 to B-18 in Playwright",
+      "milestone": "M8",
+      "prdRefs": ["B-10", "B-11", "B-12", "B-13", "B-14", "B-15", "B-16", "B-17", "B-18"],
+      "adrRefs": ["ADR-0010"],
+      "estimateHours": 6,
+      "status": "pending",
+      "dependsOn": ["BF-053"],
+      "labels": ["testing"],
+      "description": "Scenarios for disqualification, justified non-top award, award to PO, unauthorized issue, partial and over-receipt, restart persistence, duplicate POSTs and cross-tenant access.",
+      "acceptanceCriteria": [
+        "Restart test proves bids, scores, PO and receipts persist (B-16)",
+        "Duplicate POSTs create no duplicate financial records (B-17)",
+        "Org B sees no Org A data across all endpoints (B-18)"
+      ]
+    },
+    {
+      "id": "BF-057",
+      "title": "Run tenant-isolation sweep and ASVS L2 security verification",
+      "milestone": "M8",
+      "prdRefs": ["B-18", "§11"],
+      "adrRefs": ["ADR-0003", "ADR-0007"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-056"],
+      "labels": ["security", "testing"],
+      "description": "Automated sweep calling every implemented endpoint as a foreign tenant and a wrong role, plus an ASVS L2 checklist review and dependency audit.",
+      "acceptanceCriteria": [
+        "Every endpoint is covered by the sweep",
+        "No high-severity findings remain open",
+        "Results recorded in the threat model"
+      ]
+    },
+    {
+      "id": "BF-058",
+      "title": "Accessibility and responsive supplier portal pass",
+      "milestone": "M8",
+      "prdRefs": ["§4"],
+      "adrRefs": ["ADR-0015"],
+      "estimateHours": 3,
+      "status": "pending",
+      "dependsOn": ["BF-036", "BF-039"],
+      "labels": ["ux", "frontend", "testing"],
+      "description": "Audit key screens against WCAG 2.1 AA with axe and keyboard testing; fix contrast, focus and labelling issues; verify supplier portal on small screens.",
+      "acceptanceCriteria": [
+        "No serious axe violations on key screens",
+        "All actions reachable by keyboard",
+        "Supplier portal usable at 360px"
+      ]
+    },
+    {
+      "id": "BF-059",
+      "title": "Build production container image and deployment pipeline",
+      "milestone": "M8",
+      "prdRefs": ["§2"],
+      "adrRefs": ["ADR-0009", "ADR-0004"],
+      "estimateHours": 4,
+      "status": "pending",
+      "dependsOn": ["BF-001"],
+      "labels": ["devops", "security"],
+      "description": "Multi-stage container image, migrations as a release step, secrets from a manager, health-checked rolling deploy as described in docs/operations/deployment.md.",
+      "acceptanceCriteria": [
+        "Image runs as non-root with no dev dependencies",
+        "Migrations run once per release before traffic shifts",
+        "No secrets baked into the image"
+      ]
+    }
+  ]
+}
